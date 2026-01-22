@@ -1,0 +1,25 @@
+[package]
+name = "solana-ico-enhanced"
+version = "0.1.0"
+description = "Enhanced Solana ICO with Presale and Staking"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "solana_ico_enhanced"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+custom-heap = []
+custom-panic = []
+anchor-debug = []
+
+[dependencies]
+anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
+anchor-spl = "0.32.1"
+pyth-solana-receiver-sdk = "0.6.1"

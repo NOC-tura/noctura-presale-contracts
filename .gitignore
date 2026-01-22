@@ -1,0 +1,25 @@
+# Rust build artifacts
+target/
+Cargo.lock
+
+# Anchor
+.anchor/
+test-ledger/
+
+# Node
+node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets - NEVER commit these
+*.json
+!package.json
+!tsconfig.json
