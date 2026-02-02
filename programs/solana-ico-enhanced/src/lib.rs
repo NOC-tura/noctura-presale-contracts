@@ -688,6 +688,78 @@ pub mod ico {
         Ok(())
     }
 
+    /// Admin function to add allocation for giveaways/airdrops
+    /// Does NOT modify existing PresaleAllocation struct - reuses it
+    /// Only admin can call this - creates allocation without payment
+    pub fn admin_add_allocation(
+        ctx: Context<AdminAddAllocation>,
+        token_amount: u64,
+    ) -> Result<()> {
+        let config = &ctx.accounts.config;
+
+        // === SECURITY: Validate admin ===
+        require!(
+            ctx.accounts.admin.key() == config.admin,
+            ErrorCode::InvalidAdmin
+        );
+
+        // === VALIDATION ===
+        require!(token_amount > 0, ErrorCode::InvalidAmount);
+
+        // Check giveaway cap (giveaways come from community rewards pool)
+        // Community Rewards = 12.8M NOC (5%)
+        let max_giveaway_total = COMMUNITY_REWARDS_ALLOCATION * TOKEN_DECIMALS;
+        let new_total_giveaway = config.total_referral_bonuses
+            .checked_add(token_amount)
+            .ok_or(ErrorCode::Overflow)?;
+        
+        require!(
+            new_total_giveaway <= max_giveaway_total,
+            ErrorCode::PresaleHardCapReached
+        );
+
+        // === EFFECTS: Update or create allocation ===
+        let user_allocation = &mut ctx.accounts.user_allocation;
+        
+        // Initialize if new allocation
+        if user_allocation.user == Pubkey::default() {
+            user_allocation.user = ctx.accounts.recipient.key();
+            user_allocation.total_tokens = 0;
+            user_allocation.total_spent_cents = 0;
+            user_allocation.claimed = false;
+            user_allocation.referrer = Pubkey::default();
+            user_allocation.referral_bonus_tokens = 0;
+            user_allocation.purchase_count = 0;
+            user_allocation.first_purchase_at = 0;
+            user_allocation.last_purchase_at = 0;
+        }
+
+        // Add tokens to allocation
+        user_allocation.total_tokens = user_allocation
+            .total_tokens
+            .checked_add(token_amount)
+            .ok_or(ErrorCode::Overflow)?;
+        
+        // Track as referral bonus (reuse existing field for giveaway tracking)
+        user_allocation.referral_bonus_tokens = user_allocation
+            .referral_bonus_tokens
+            .checked_add(token_amount)
+            .ok_or(ErrorCode::Overflow)?;
+
+        // Update config to track total giveaways issued
+        let config = &mut ctx.accounts.config;
+        config.total_referral_bonuses = new_total_giveaway;
+
+        msg!(
+            "ADMIN_GIVEAWAY: Added {} tokens to user {} (total allocation: {})",
+            token_amount,
+            ctx.accounts.recipient.key(),
+            user_allocation.total_tokens
+        );
+
+        Ok(())
+    }
+
     /// Claim presale allocation and immediately stake with chosen tier
     pub fn claim_and_stake(
         ctx: Context<ClaimAndStake>,
@@ -3034,6 +3106,39 @@ pub struct AdminClaimForUser<'info> {
     pub admin: Signer<'info>,
 
     pub token_program: Program<'info, Token>,
+}
+
+/// Admin add allocation for giveaways/airdrops
+/// Creates or updates allocation without requiring payment
+#[derive(Accounts)]
+pub struct AdminAddAllocation<'info> {
+    /// Config account - contains admin pubkey
+    #[account(
+        mut,
+        seeds = [b"config", admin.key().as_ref()],
+        bump,
+    )]
+    pub config: Account<'info, Config>,
+
+    /// Admin signer - MUST match config.admin
+    #[account(mut)]
+    pub admin: Signer<'info>,
+
+    /// Recipient wallet (giveaway recipient) - does NOT need to sign
+    /// CHECK: This is just the target wallet address for the giveaway
+    pub recipient: AccountInfo<'info>,
+
+    /// User allocation PDA - created if doesn't exist
+    #[account(
+        init_if_needed,
+        payer = admin,
+        space = 8 + PresaleAllocation::SPACE,
+        seeds = [b"allocation", recipient.key().as_ref()],
+        bump,
+    )]
+    pub user_allocation: Account<'info, PresaleAllocation>,
+
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
